@@ -159,9 +159,7 @@
         (if (< iter-count max-divisions)
           (let [new-ranges (clean-ranges (subdivide ranges warn-count-getter)
                                          warn-count-getter)]
-            (println new-ranges)
             (recur (inc iter-count) new-ranges))
           (let [analyzed-ranges (vec ranges)]
-            (println "printing results")
             (print-results master-commits analyzed-ranges warn-count-getter))))))
   (exit 0 nil))
