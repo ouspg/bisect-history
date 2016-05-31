@@ -47,7 +47,7 @@
   (let [warning-pattern #"(.+):([0-9]+):([0-9]+): (.+): (.*)"]
     (map rest (re-seq warning-pattern scan-log))))
 
-(defn analyze-commit 
+(defn analyze-commit
   [git-sh scan-build-sh config-cmd dir commit]
   ; Run scan-build recipe
   (println "analyzing " commit)
@@ -118,6 +118,19 @@
   (str "Error in command line arguments:\n"
        (string/join \newline errors)))
 
+(defn print-results
+  [commits range-indices getter]
+  (doseq [id (range (count commits))]
+    (println (get commits id)
+             (if (contains? (set range-indices) id)
+               (getter id)
+               ; Do the endpoints of the range the id lies have the same value?
+               (do
+                 (if (= (getter (last  (take-while (partial > id) range-indices)))
+                        (getter (first (drop-while (partial > id) range-indices))))
+                   "|"
+                   "?"))))))
+
 
 (defn -main [& args]
   (let [{:keys [options arguments errors summary]} (parse-opts args cli-options)
@@ -146,9 +159,9 @@
         (if (< iter-count max-divisions)
           (let [new-ranges (clean-ranges (subdivide ranges warn-count-getter)
                                          warn-count-getter)]
+            (println new-ranges)
             (recur (inc iter-count) new-ranges))
-          (let [analyzed-ranges (set ranges)]
-            (doseq [id (range (count master-commits))]
-              (println (get master-commits id)
-                       (if (contains? analyzed-ranges id) (warn-count-getter id) "|"))))))))
+          (let [analyzed-ranges (vec ranges)]
+            (println "printing results")
+            (print-results master-commits analyzed-ranges warn-count-getter))))))
   (exit 0 nil))
