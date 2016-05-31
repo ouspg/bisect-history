@@ -76,11 +76,11 @@
       (analyze-commit git-sh scan-build-sh config-cmd dir commit)))   ; run the analysis
 
 (defn get-memo-warning-count-getter
-  [git-sh scan-build-sh dir commits]
+  [git-sh scan-build-sh config-cmd dir commits]
   (memoize
     (fn
       [id]
-      (count (get-commit-analysis git-sh scan-build-sh dir (get commits id))))))
+      (count (get-commit-analysis git-sh scan-build-sh config-cmd dir (get commits id))))))
 
 (defn get-git-sh []
   (partial git "--no-pager"))
@@ -134,7 +134,10 @@
                                  (when (:number options) (str "--max-count=" (:number options)))
                                  "master"])
           master-commits (string/split-lines (apply git-sh rev-list-args))
-          warn-count-getter (get-memo-warning-count-getter git-sh scan-build-sh analysis-dir
+          warn-count-getter (get-memo-warning-count-getter git-sh
+                                                           scan-build-sh
+                                                           (:config-cmd options)
+                                                           analysis-dir
                                                            master-commits)]
       ; Iterate splitting the commit range to narrow down the changes in the inspected values
       (loop
