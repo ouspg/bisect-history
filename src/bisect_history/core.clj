@@ -90,7 +90,7 @@
    ["-d" "--divisions N" "max number of divisions" :parse-fn bigint :default 3]
    ["-o" "--out-dir PATH" "directory for storing reports"
     :validate [#(.isDirectory (io/file %)) "is not directory"]]
-   ;["-b" "--build-script FILE" :validate [#(.exists (io/as-file %)) "is not a file"]]
+   ["-s" "--short" "print short summary"]
    ["-h" "--help"]])
 
 (defn usage [options-summary]
@@ -118,6 +118,14 @@
                    "|"
                    "?"))))))
 
+(defn print-summary
+  [commits range-indices getter]
+  (let [changes (filter #(apply not= (map getter %))
+                        (map list range-indices (rest range-indices)))
+        id-diff (map (partial apply #(list %1 (- (getter %1) (getter %2)))) changes)
+        str-diff (map (partial apply #(str (get commits %1)
+                                           " " (when (> %2 0) "+") %2)) id-diff)]
+    (println (string/join \newline str-diff))))
 
 (defn -main [& args]
   (let [{:keys [options arguments errors summary]} (parse-opts args cli-options)
@@ -147,5 +155,7 @@
                                          warn-count-getter)]
             (recur (inc iter-count) new-ranges))
           (let [analyzed-ranges (vec ranges)]
-            (print-results master-commits analyzed-ranges warn-count-getter))))))
+            (if (:short options)
+              (print-summary master-commits analyzed-ranges warn-count-getter)
+              (print-results master-commits analyzed-ranges warn-count-getter)))))))
   (exit 0 nil))
