@@ -6,7 +6,7 @@
            [clj-json [core :as json]])
   (:gen-class))
 
-(programs git scan-build rm)
+(programs git bash rm)
 
 (defn clean-ranges
   "Remove intermediate indices that have same value as neighbors."
@@ -40,7 +40,7 @@
     (when (.exists f)
       (json/parse-string (slurp f)))))
 
-(defn parse-scan-build-output
+(defn parse-scan-build-warnings
   [scan-log]
   ; Parse errors straight from the scan-build output
   ; Warning format is file:row:col: warning: description message
@@ -48,68 +48,55 @@
     (map rest (re-seq warning-pattern scan-log))))
 
 (defn analyze-commit
-  [git-sh scan-build-sh config-cmd dir commit]
-  ; Run scan-build recipe
+  [git-sh build-script dir commit]
+
   (println "analyzing " commit)
   (git-sh "checkout" commit)
-  (scan-build-sh "make clean") ; make sure it is clean to rebuild
-  (apply scan-build-sh config-cmd)
 
-  (let [scan-result (scan-build-sh "make" "-s" "-j2" {:verbose true})
-        warnings (parse-scan-build-output (:stderr scan-result))
+  (let [scan-result (bash build-script {:verbose true})
+        warnings (parse-scan-build-warnings (:stderr scan-result))
         result-dir #"scan-build: Analysis results \(plist files\) deposited in '(.*)'"
-        [_ scan-build-report-dir] (re-find result-dir (:stdout scan-result))]
+        [_ scan-build-report-dir] (re-seq result-dir (:stdout scan-result))]
     (spit (commit-file dir commit) (json/generate-string warnings))
     ; Remove analysis files (is there a way to prevent scan-build from storing them?)
     (if scan-build-report-dir
-      (rm "-rf" scan-build-report-dir)
+      (apply println "rm" "-rf" scan-build-report-dir)
       (println "scan-build report dir was not removed" (:stdout scan-result))))
-
-  (scan-build-sh "make clean") ; clean after
 
   ; After analysis finishes load the freshly generated analysis
   (load-commit-analysis dir commit))
 
 (defn get-commit-analysis
-  [git-sh scan-build-sh config-cmd dir commit]
+  [git-sh build-script dir commit]
   (or (load-commit-analysis dir commit) ; hit in previous results?
-      (analyze-commit git-sh scan-build-sh config-cmd dir commit)))   ; run the analysis
+      (analyze-commit git-sh build-script dir commit)))   ; run the analysis
 
 (defn get-memo-warning-count-getter
-  [git-sh scan-build-sh config-cmd dir commits]
+  [git-sh build-script dir commits]
   (memoize
     (fn
       [id]
-      (count (get-commit-analysis git-sh scan-build-sh config-cmd dir (get commits id))))))
+      (count (get-commit-analysis git-sh build-script dir (get commits id))))))
 
 (defn get-git-sh []
   (partial git "--no-pager"))
-
-(defn get-scan-build-sh [out-dir]
-  (partial scan-build "-o" out-dir "-k" "-plist"))
 
 (defn exit [code message]
   (when message (println message))
   (System/exit code))
 
 (def cli-options
-  [;["-C" "--git-path PATH" "Git repository path"
-   ;:default "."
-   ;:validate [#(.isDirectory (io/file %)) "PATH is not a directory"]]
-   ["-n" "--number N" "max number of commits to inspect" :parse-fn bigint :default 1000]
+  [["-n" "--number N" "number of commits to inspect" :parse-fn bigint :default 100]
    ["-d" "--divisions N" "max number of divisions" :parse-fn bigint :default 3]
    ["-o" "--out-dir PATH" "directory for storing reports"
     :validate [#(.isDirectory (io/file %)) "is not directory"]]
-   ["-r" "--scan-build-report-dir PATH" "directory for scan-build reports"
-    :validate [#(.isDirectory (io/file %)) "is not directory"]]
-   ["-c" "--config-cmd CMD" "configuration command to execute before make"
-    :parse-fn #(string/split % #"\s+") :default ["./config"]]
+   ;["-b" "--build-script FILE" :validate [#(.exists (io/as-file %)) "is not a file"]]
    ["-h" "--help"]])
 
 (defn usage [options-summary]
   (string/join \newline
                ["A tool for approximating change of attribute in the history of a Git repository"
-                "Usage: bisect-history options"
+                "Usage: bisect-history options BUILD-SCRIPT"
                 ""
                 "Options:"
                 options-summary]))
@@ -135,11 +122,11 @@
 (defn -main [& args]
   (let [{:keys [options arguments errors summary]} (parse-opts args cli-options)
         git-sh (get-git-sh)
-        scan-build-sh (get-scan-build-sh (:scan-build-report-dir options))
         analysis-dir  (:out-dir options)
-        max-divisions (:divisions options)]
+        max-divisions (:divisions options)
+        [build-script & _]  arguments]
     (cond
-      (:help options) (exit 0 (usage summary))
+      (or (:help options) (nil? build-script)) (exit 0 (usage summary))
       errors (exit 1 (error-msg errors)))
     (let [rev-list-args (filter identity
                                 ["rev-list"
@@ -148,8 +135,7 @@
                                  "master"])
           master-commits (string/split-lines (apply git-sh rev-list-args))
           warn-count-getter (get-memo-warning-count-getter git-sh
-                                                           scan-build-sh
-                                                           (:config-cmd options)
+                                                           build-script
                                                            analysis-dir
                                                            master-commits)]
       ; Iterate splitting the commit range to narrow down the changes in the inspected values
