@@ -56,11 +56,11 @@
   (let [scan-result (bash build-script {:verbose true})
         warnings (parse-scan-build-warnings (:stderr scan-result))
         result-dir #"scan-build: Analysis results \(plist files\) deposited in '(.*)'"
-        [_ scan-build-report-dir] (re-seq result-dir (:stdout scan-result))]
+        scan-build-report-dirs (map second (re-seq result-dir (:stdout scan-result)))]
     (spit (commit-file dir commit) (json/generate-string warnings))
     ; Remove analysis files (is there a way to prevent scan-build from storing them?)
-    (if scan-build-report-dir
-      (apply println "rm" "-rf" scan-build-report-dir)
+    (if scan-build-report-dirs
+      (apply rm "-rf" scan-build-report-dirs)
       (println "scan-build report dir was not removed" (:stdout scan-result))))
 
   ; After analysis finishes load the freshly generated analysis
@@ -124,7 +124,7 @@
                         (map list range-indices (rest range-indices)))
         id-diff (map (partial apply #(list %1 (- (getter %1) (getter %2)))) changes)
         str-diff (map (partial apply #(str (get commits %1)
-                                           " " (when (> %2 0) "+") %2)) id-diff)]
+                                           " " (when (pos? %2) "+") %2)) id-diff)]
     (println (string/join \newline str-diff))))
 
 (defn -main [& args]
