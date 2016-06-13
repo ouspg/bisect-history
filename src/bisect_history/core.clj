@@ -40,43 +40,28 @@
     (when (.exists f)
       (json/parse-string (slurp f)))))
 
-(defn parse-scan-build-warnings
-  [scan-log]
-  ; Parse errors straight from the scan-build output
-  ; Warning format is file:row:col: warning: description message
-  (let [warning-pattern #"(.+):([0-9]+):([0-9]+): (.+): (.*)"]
-    (map rest (re-seq warning-pattern scan-log))))
-
 (defn analyze-commit
-  [git-sh build-script dir commit]
-
+  [git-sh build-script parser dir commit]
   (println "analyzing " commit)
   (git-sh "checkout" commit)
-
   (let [scan-result (bash build-script {:verbose true})
-        warnings (parse-scan-build-warnings (:stderr scan-result))
-        result-dir #"scan-build: Analysis results \(plist files\) deposited in '(.*)'"
-        scan-build-report-dirs (map second (re-seq result-dir (:stdout scan-result)))]
-    (spit (commit-file dir commit) (json/generate-string warnings))
-    ; Remove analysis files (is there a way to prevent scan-build from storing them?)
-    (if scan-build-report-dirs
-      (apply rm "-rf" scan-build-report-dirs)
-      (println "scan-build report dir was not removed" (:stdout scan-result))))
-
+        warnings (parser scan-result)]
+    ; Store analysis result
+    (spit (commit-file dir commit) (json/generate-string warnings)))
   ; After analysis finishes load the freshly generated analysis
   (load-commit-analysis dir commit))
 
 (defn get-commit-analysis
-  [git-sh build-script dir commit]
+  [git-sh build-script parser dir commit]
   (or (load-commit-analysis dir commit) ; hit in previous results?
-      (analyze-commit git-sh build-script dir commit)))   ; run the analysis
+      (analyze-commit git-sh build-script parser dir commit)))   ; run the analysis
 
 (defn get-memo-warning-count-getter
-  [git-sh build-script dir commits]
+  [git-sh build-script parser dir commits]
   (memoize
     (fn
       [id]
-      (count (get-commit-analysis git-sh build-script dir (get commits id))))))
+      (count (get-commit-analysis git-sh build-script parser dir (get commits id))))))
 
 (defn get-git-sh []
   (partial git "--no-pager"))
@@ -96,7 +81,7 @@
 (defn usage [options-summary]
   (string/join \newline
                ["A tool for approximating change of attribute in the history of a Git repository"
-                "Usage: bisect-history options BUILD-SCRIPT"
+                "Usage: bisect-history options BUILD-SCRIPT PARSER"
                 ""
                 "Options:"
                 options-summary]))
@@ -112,11 +97,10 @@
              (if (contains? (set range-indices) id)
                (getter id)
                ; Do the endpoints of the range the id lies have the same value?
-               (do
-                 (if (= (getter (last  (take-while (partial > id) range-indices)))
-                        (getter (first (drop-while (partial > id) range-indices))))
-                   "|"
-                   "?"))))))
+               (if (= (getter (last  (take-while (partial > id) range-indices)))
+                      (getter (first (drop-while (partial > id) range-indices))))
+                 "|"
+                 "?")))))
 
 (defn print-summary
   [commits range-indices getter]
@@ -132,11 +116,12 @@
         git-sh (get-git-sh)
         analysis-dir  (:out-dir options)
         max-divisions (:divisions options)
-        [build-script & _]  arguments]
+        [build-script parser-file & _]  arguments]
     (cond
-      (or (:help options) (nil? build-script)) (exit 0 (usage summary))
+      (or (:help options) (nil? build-script) (nil? parser-file)) (exit 0 (usage summary))
       errors (exit 1 (error-msg errors)))
-    (let [rev-list-args (filter identity
+    (let [warning-parser (load-file parser-file)
+          rev-list-args (filter identity
                                 ["rev-list"
                                  "--first-parent"
                                  (when (:number options) (str "--max-count=" (:number options)))
@@ -144,6 +129,7 @@
           master-commits (string/split-lines (apply git-sh rev-list-args))
           warn-count-getter (get-memo-warning-count-getter git-sh
                                                            build-script
+                                                           warning-parser
                                                            analysis-dir
                                                            master-commits)]
       ; Iterate splitting the commit range to narrow down the changes in the inspected values
