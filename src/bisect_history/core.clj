@@ -1,6 +1,7 @@
 (ns bisect-history.core
   (require [me.raynes.conch :refer [programs]]
            [clojure.string :as string]
+           [clojure.java.io :as io]
            [clojure.tools.cli :refer [parse-opts]])
   (:gen-class))
 
@@ -32,8 +33,9 @@
   [git-sh commits analyzer analyzer-args]
   (memoize
     (fn [id]
-      (git-sh "checkout" (get commits id))
-      (apply analyzer analyzer-args))))
+      (do
+        (git-sh "checkout" (get commits id))
+        (apply analyzer analyzer-args)))))
 
 (defn get-git-sh []
   (partial git "--no-pager"))
@@ -43,9 +45,11 @@
   (System/exit code))
 
 (def cli-options
-  [["-n" "--number N" "number of commits to inspect" :parse-fn bigint :default 100]
+  [["-n" "--number N" "number of commits to inspect" :parse-fn bigint]
    ["-d" "--divisions N" "max number of divisions" :parse-fn bigint :default 3]
    ["-s" "--short" "print short summary"]
+   ["-f" "--file FILE" "use list of commits instead of the history of master"
+    :validate [#(.exists (io/as-file %)) "is not a file"]]
    ["-h" "--help"]])
 
 (defn usage [options-summary]
@@ -95,6 +99,7 @@
 (defn -main [& args]
   (let [{:keys [options arguments errors summary]} (parse-opts args cli-options)
         max-divisions (:divisions options)
+        commit-file (:file options)
         [analyzer-file & analyzer-args]  arguments]
     (cond
       (or (:help options) (nil? analyzer-file)) (exit 0 (usage summary))
@@ -104,13 +109,18 @@
           rev-list-args (filter identity
                                 ["rev-list"
                                  "--first-parent"
-                                 (when (:number options) (str "--max-count=" (:number options)))
                                  "master"])
-          master-commits (string/split-lines (apply git-sh rev-list-args))
-          analysis-getter (memo-analysis-getter git-sh master-commits analyzer analyzer-args)
+          commit-source (vec (string/split-lines
+                               (if commit-file
+                                 (slurp commit-file)
+                                 (apply git-sh rev-list-args))))
+          commits (vec (if (:number options)
+                    (take (:number options) commit-source)
+                    commit-source))
+          analysis-getter (memo-analysis-getter git-sh commits analyzer analyzer-args)
           analyzed-ranges
-          (vec (analyze-history master-commits max-divisions git-sh analysis-getter))]
-   (if (:short options)
-     (print-summary master-commits analyzed-ranges analysis-getter)
-     (print-results master-commits analyzed-ranges analysis-getter))))
-   (exit 0 nil))
+          (vec (analyze-history commits max-divisions git-sh analysis-getter))]
+      (if (:short options)
+        (print-summary commits analyzed-ranges analysis-getter)
+        (print-results commits analyzed-ranges analysis-getter))))
+  (exit 0 nil))
