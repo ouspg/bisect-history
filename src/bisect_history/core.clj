@@ -87,14 +87,14 @@
 
 (defn analyze-history
   [commits max-divisions git-sh analysis-getter]
-    ; Iterate splitting the commit range to narrow down the changes in the inspected values
-    (loop
-      [iter-count 0
-       ranges [0 (dec (count commits))]]
-      (if-not (< iter-count max-divisions)
-        ranges
-        (recur (inc iter-count) (clean-ranges (subdivide ranges analysis-getter)
-                                              analysis-getter)))))
+  ; Iterate splitting the commit range to narrow down the changes in the inspected values
+  (loop
+    [iter-count 0
+     ranges [0 (dec (count commits))]]
+    (if-not (< iter-count max-divisions)
+      ranges
+      (recur (inc iter-count) (clean-ranges (subdivide ranges analysis-getter)
+                                            analysis-getter)))))
 
 (defn -main [& args]
   (let [{:keys [options arguments errors summary]} (parse-opts args cli-options)
@@ -106,17 +106,14 @@
       errors (exit 1 (error-msg errors)))
     (let [git-sh (get-git-sh)
           analyzer (load-file analyzer-file)
-          rev-list-args (filter identity
-                                ["rev-list"
-                                 "--first-parent"
-                                 "master"])
+          rev-list-args ["rev-list" "--first-parent" "master"]
           commit-source (vec (string/split-lines
                                (if commit-file
                                  (slurp commit-file)
                                  (apply git-sh rev-list-args))))
           commits (vec (if (:number options)
-                    (take (:number options) commit-source)
-                    commit-source))
+                         (take (:number options) commit-source)
+                         commit-source))
           analysis-getter (memo-analysis-getter git-sh commits analyzer analyzer-args)
           analyzed-ranges
           (vec (analyze-history commits max-divisions git-sh analysis-getter))]
