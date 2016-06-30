@@ -42,7 +42,7 @@
   (load-commit-analysis dir commit))
 
 (defn analyzer
-  "Return warning count."
+  "Builds project using build-script and returns the count of scan-build warnings."
   [build-script dir]
   (let [commit (trim (git "rev-list" "-n1" "HEAD"))] ; get the hash of the current commit
   (count
