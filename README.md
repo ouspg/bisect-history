@@ -14,6 +14,7 @@ The attribute is evaluated by the analyzer provided by the user and the tool sto
 ```
 lein uberjar
 ```
+or just use the jar in target/uberjar
 
 ## Usage
 Usage: bisect-history options ANALYZER_CLJ  [ANALYZER_ARGS...]
@@ -37,7 +38,7 @@ Using bisect-history with scan-build-analyzer gives you an estimate how the numb
 cd path/to/project
 mkdir bishis # folder where scan-build-analyzer.clj caches analysis results
 # absolute paths might have to be used
-java -jar bisect_history-0.1.0-SNAPSHOT-standalone.jar -n 200 -d3 \
+java -jar target/uberjar/bisect_history-0.1.0-SNAPSHOT-standalone.jar -n 200 -d3 \
 utils/scan-build-analyzer.clj simplemake.sh bishis
 
 Example output showing the number of warnings at each commit.
