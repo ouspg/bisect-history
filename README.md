@@ -20,11 +20,14 @@ or just use the jar in target/uberjar
 Usage: bisect-history options ANALYZER_CLJ  [ANALYZER_ARGS...]
 
 ## Options
+
+````
   -n, --number N           number of commits to inspect
   -d, --divisions D   3    max number of divisions
   -s, --short              print short summary
   -f, --file FILE          use list of commits instead of the history of master
   -h, --help               show help
+````
 
 ## Examples
 
