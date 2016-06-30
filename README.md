@@ -2,7 +2,7 @@
 A tool for approximating the change of the specified attribute in the history of the Git repository.
 
 The goal is to approximate the change of the given attribute overtime.
-The seleceted history range is inspected by started by analysing the first and last comment of the range.
+The selected history range is inspected by started by analysing the first and last comment of the range.
 After that given number of iterations is done by splitting the ranges if the attribute differs in the endpoints.
 The aim is to narrow down the commits which affect the targeted attribute.
 
